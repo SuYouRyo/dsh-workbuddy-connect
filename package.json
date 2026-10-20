@@ -1,7 +1,7 @@
 {
   "name": "dsh-workbuddy-connect",
   "displayName": "DSH WorkBuddy Connect",
-  "description": "WorkBuddy / WorkBuddy AI 模型接入 DeepSeek Harness，并支持设备码登录（无需桌面 App） — WorkBuddy models in DeepSeek Harness, with device-code sign-in for hosts without the desktop app.",
+  "description": "手机端优先：在 Android/DSH（如 DSHA）上用设备码登录接入 WorkBuddy 模型，无需桌面 App — phone-focused fork: WorkBuddy models in DSH with device-code sign-in, no desktop app needed.",
   "version": "0.7.6-android.1",
   "author": "corrinehu",
   "keywords": [

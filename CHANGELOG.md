@@ -1,11 +1,15 @@
 # 更新记录
 
-本 Fork（`android-support` 分支）基于上游 [corrinehu/dsh-workbuddy-connect](https://github.com/corrinehu/dsh-workbuddy-connect)。
+本 Fork（`android-support` 分支）是**面向手机端的发行版**，基于上游 [corrinehu/dsh-workbuddy-connect](https://github.com/corrinehu/dsh-workbuddy-connect)。
 只记录**本 Fork 相对上游的差异**；上游自身的更新请看上游仓库的发布记录。
 
 ## 0.7.6-android.1
 
 对应上游基线：`v0.7.6`（DSH 内核 `0.2.0-rc.2`）。
+
+### 定位
+
+**手机端优先**：目标场景是在 Android 上运行 DeepSeek Harness（如 [DSHA](https://github.com/DSH-APP/DSHA)）时，直接使用 WorkBuddy 账号里的模型。上游只支持复用桌面 App 的登录，手机上没有桌面 App、也没有解密其凭据所需的系统钥匙串，因此**无法登录**；本 Fork 补上设备码登录，使手机可以独立完成登录与续期。
 
 ### 新增
 

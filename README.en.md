@@ -1,13 +1,16 @@
-# DSH WorkBuddy Connect
+# DSH WorkBuddy Connect (phone-focused fork)
 
 English | [中文](./README.md)
 
-> **This is a fork of [corrinehu/dsh-workbuddy-connect](https://github.com/corrinehu/dsh-workbuddy-connect) (`android-support` branch).**
-> Upstream reads the *desktop* app's sign-in, so hosts without that app — phones, headless servers, containers — could not sign in at all.
-> This fork adds **device-code sign-in** (a `login` subcommand): any platform can sign itself in, with no desktop app and no third-party helper.
+> **A fork built for phones**, based on [corrinehu/dsh-workbuddy-connect](https://github.com/corrinehu/dsh-workbuddy-connect) (`android-support` branch).
+>
+> **The gap it closes**: upstream can only reuse the sign-in of the **WorkBuddy desktop app**. A phone has neither that app nor the OS keychain (macOS Keychain / Windows DPAPI) needed to decrypt its credential, so on a phone the plugin **cannot sign in at all** — it could only consume a credential copied from a computer.
+>
+> **What this fork is for**: it gives **DSH on a phone** (for example [DSHA](https://github.com/DSH-APP/DSHA), which runs DeepSeek Harness on Android) a **device-code sign-in** — start the flow in the phone's terminal, approve it in a browser, and the plugin signs itself in and refreshes on its own. No computer, no desktop app, no third-party helper.
+>
 > Everything else follows upstream; see [CHANGELOG.md](./CHANGELOG.md) for the difference.
 
-Brings the models available to your WorkBuddy / WorkBuddy AI account into [DeepSeek Harness](https://github.com/deepseek-ai/deepseek-harness); the two versions each show their own model group and keep their own account and credit.
+Brings the models available to your WorkBuddy / WorkBuddy AI account into [DeepSeek Harness](https://github.com/deepseek-ai/deepseek-harness); the two versions each show their own model group and keep their own account and credit. **It works on desktop and on a phone — the phone is what this fork is about.**
 
 ## Sign-in
 
@@ -15,41 +18,54 @@ Two ways to get a credential — pick either:
 
 | Way | Where it applies | Notes |
 |---|---|---|
-| **Reuse the desktop app's sign-in** | Machines that run the WorkBuddy desktop app | Upstream behaviour: reads the app's auth file and follows account switches |
-| **Device-code sign-in** | Phones, headless servers, containers, anything without the desktop app | Added by this fork: start on the CLI, approve in any browser |
+| **Device-code sign-in** (the point of this fork) | **Phones**, headless servers, containers, anything without the desktop app | Added by this fork: start in a terminal, approve in any browser |
+| Reuse the desktop app's sign-in | Computers that run the WorkBuddy desktop app | Upstream behaviour: reads the app's auth file and follows account switches |
+
+> On a phone, one command is all you need: `login`. That is why this fork exists.
 
 ## Install
 
 **Prerequisite**: either the WorkBuddy (CN) / WorkBuddy AI desktop app is installed and signed in on this machine (its sign-in is reused), **or** you use the device-code sign-in below, which needs no desktop app. The two versions never affect each other.
 
-### Phone / headless: device-code sign-in
+### Phone quick start (what this fork is for)
 
-Once the plugin is installed, run `login` once in the target profile:
+For running DSH on Android — e.g. [DSHA](https://github.com/DSH-APP/DSHA), which ships a full Ubuntu environment with `dsh` inside it. **Everything happens on the phone; no computer is involved.**
 
 ```sh
-# CN (workbuddy)
-dsh plugin --profile web exec dsh-workbuddy-connect login
+# 1) install the plugin (DSH 0.2.0-rc.2)
+dsh plugin --profile web add github:SuYouRyo/dsh-workbuddy-connect
 
-# International (WorkBuddy AI)
+# 2) device-code sign-in: prints an authorization URL
+dsh plugin --profile web exec dsh-workbuddy-connect login
+```
+
+Open that URL **in the phone's browser** (or on any other device), sign in to WorkBuddy and approve. Seconds later the terminal shows:
+
+```
+WorkBuddy Connect: signed in as <nickname>
+Access token expires …(refresh is automatic)
+Credential saved to <DSH_HOME>/.workbuddy-auth.json
+```
+
+Restart the Web surface and the "WorkBuddy" group appears in the model picker. Expired tokens refresh automatically, so you sign in once.
+
+> Inside DSHA you can also hand those two commands to the app's built-in agent; it prints the URL and you just approve it.
+
+### Device-code sign-in details
+
+For the international product add `--provider workbuddy-ai`:
+
+```sh
 dsh plugin --profile web exec dsh-workbuddy-connect login --provider workbuddy-ai
 ```
 
-It prints an authorization URL and starts polling:
+While pending, the terminal polls; it finishes on its own once you approve:
 
 ```
 WorkBuddy Connect: device sign-in
 Open this URL in any browser and approve it:
   https://copilot.tencent.com/login?platform=CLI&state=…
 Waiting for approval… (Ctrl-C to cancel)
-```
-
-Open that URL on **any** device (this phone's browser, another computer), sign in and approve; the command finishes within seconds:
-
-```
-WorkBuddy Connect: signed in as <nickname>
-Access token expires 2026-11-17T00:44:17.047Z (refresh is automatic)
-Credential saved to <DSH_HOME>/.workbuddy-auth.json
-The host reads it on the next request; no restart needed.
 ```
 
 Notes:

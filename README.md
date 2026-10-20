@@ -1,13 +1,16 @@
-# DSH WorkBuddy Connect
+# DSH WorkBuddy Connect（手机端 Fork）
 
 [English](./README.en.md) | 中文
 
-> **这是 [corrinehu/dsh-workbuddy-connect](https://github.com/corrinehu/dsh-workbuddy-connect) 的 Fork（`android-support` 分支）。**
-> 上游读取桌面 App 的登录状态，因此手机、无头服务器、容器这些没有桌面 App 的环境**无法自行登录**。
-> 本分支补上了**设备码登录**（`login` 子命令）：任何平台都能自己登录，不再依赖桌面 App 和第三方工具。
+> **这是一个面向手机端的 Fork**，基于 [corrinehu/dsh-workbuddy-connect](https://github.com/corrinehu/dsh-workbuddy-connect)（`android-support` 分支）。
+>
+> **它解决的问题**：上游插件只能复用 **WorkBuddy 桌面 App** 的登录状态。而手机上既没有那个桌面 App，也没有解密其凭据所需的系统钥匙串（macOS Keychain / Windows DPAPI），所以手机上**根本无法登录**，只能消费从电脑拷来的凭据。
+>
+> **本 Fork 的用途**：给**手机上的 DSH**（例如 [DSHA](https://github.com/DSH-APP/DSHA) 这类在 Android 上运行 DeepSeek Harness 的发行版）补上**设备码登录**——在手机终端里发起授权、在浏览器里点一下批准，插件就能自己登录并自动续期，全程不需要电脑、不需要桌面 App、不需要第三方工具。
+>
 > 其余行为、版本对应关系与上游保持一致；差异见 [CHANGELOG.md](./CHANGELOG.md)。
 
-将 WorkBuddy / WorkBuddy AI 的可用模型接入 DeepSeek Harness；两版分别显示各自的模型分组，并各自沿用对应的账号与积分。
+将 WorkBuddy / WorkBuddy AI 的可用模型接入 DeepSeek Harness；两版分别显示各自的模型分组，并各自沿用对应的账号与积分。**手机端与桌面端都能用，但手机端是本 Fork 的重点**。
 
 ## 登录方式
 
@@ -15,41 +18,54 @@
 
 | 方式 | 适用环境 | 说明 |
 |---|---|---|
-| **复用桌面 App 登录** | 已安装并登录 WorkBuddy 桌面 App 的机器 | 上游原有行为：读取 App 落盘的登录凭据，App 切号自动跟随 |
-| **设备码登录** | 手机、无头服务器、容器、任何没有桌面 App 的环境 | 本 Fork 新增：命令行发起授权，在任意浏览器里批准即可 |
+| **设备码登录**（本 Fork 重点） | **手机**、无头服务器、容器、任何没有桌面 App 的环境 | 本 Fork 新增：在终端发起授权，在任意浏览器里批准即可，无需桌面 App |
+| 复用桌面 App 登录 | 已安装并登录 WorkBuddy 桌面 App 的电脑 | 上游原有行为：读取 App 落盘的登录凭据，App 切号自动跟随 |
+
+> 在手机上，你只需要 `login` 这一条命令——这是本 Fork 存在的理由。
 
 ## 安装
 
 **前置**：二选一——本机已安装并登录 WorkBuddy（国内版）/ WorkBuddy AI 桌面 App（复用其登录状态），**或**直接用下文的设备码登录（无需桌面 App）。两版互不影响。
 
-### 手机 / 无桌面 App：设备码登录
+### 手机端快速开始（本 Fork 的主要用途）
 
-装好插件后，在目标 profile 里跑一次 `login`：
+适用：在 Android 上跑 DSH 的场景，例如 [DSHA](https://github.com/DSH-APP/DSHA)（包里是一个完整的 Ubuntu 环境，`dsh` 在其中运行）。**全程在手机上完成，不需要电脑。**
 
 ```sh
-# 国内版（workbuddy）
-dsh plugin --profile web exec dsh-workbuddy-connect login
+# 1) 装插件（DSH 0.2.0-rc.2）
+dsh plugin --profile web add github:SuYouRyo/dsh-workbuddy-connect
 
-# 国际版（WorkBuddy AI）
+# 2) 设备码登录：会打印一个链接
+dsh plugin --profile web exec dsh-workbuddy-connect login
+```
+
+拿到链接后，**用手机浏览器打开它**（或复制到任意设备），登录 WorkBuddy 账号并点授权。几秒后终端会显示：
+
+```
+WorkBuddy Connect: signed in as <昵称>
+Access token expires …(refresh is automatic)
+Credential saved to <DSH_HOME>/.workbuddy-auth.json
+```
+
+之后重启 Web，模型选择器里就会出现「WorkBuddy」分组，可以直接对话。令牌到期由插件自己续期，不用再登录。
+
+> 在 DSHA 里，也可以把这两条命令交给 App 内的 Agent 执行；登录链接它会把给你，你点一下批准即可。
+
+### 设备码登录的细节
+
+国际版（WorkBuddy AI）加 `--provider workbuddy-ai`：
+
+```sh
 dsh plugin --profile web exec dsh-workbuddy-connect login --provider workbuddy-ai
 ```
 
-它会打印一个授权链接，并开始轮询：
+等待授权期间终端会轮询，授权成功后自动结束：
 
 ```
 WorkBuddy Connect: device sign-in
 Open this URL in any browser and approve it:
   https://copilot.tencent.com/login?platform=CLI&state=…
 Waiting for approval… (Ctrl-C to cancel)
-```
-
-在**任意设备**（同一台手机的浏览器、或另一台电脑）打开该链接，登录并授权，命令会在几秒内完成：
-
-```
-WorkBuddy Connect: signed in as <昵称>
-Access token expires 2026-11-17T00:44:17.047Z (refresh is automatic)
-Credential saved to <DSH_HOME>/.workbuddy-auth.json
-The host reads it on the next request; no restart needed.
 ```
 
 说明：
