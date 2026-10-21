@@ -233,6 +233,9 @@ const CLIENT_UA = 'CLI/2.63.2 CodeBuddy/2.63.2'
 const JSON_TIMEOUT_MS = 30_000
 const ERROR_BODY_LIMIT = 4096
 
+/** Attempts per chat message: one send plus the gateway-requested resend. */
+const CHAT_ATTEMPTS = 2
+
 /** Insufficient-credit markers, ASCII lowercase plus the original Chinese. */
 const HARD_CREDIT_MARKERS: readonly string[] = [
   'insufficient credit', 'no credit', 'credit exhausted', 'credits exhausted', 'out of credit',
@@ -402,6 +405,46 @@ export function extractDisplayErrorMessage(body: string): string | undefined {
     // Non-JSON bodies stay undefined
   }
   return undefined
+}
+
+/** The business `code` of an upstream JSON error body, when it carries one. */
+export function upstreamErrorCode(body: string): number | undefined {
+  const trimmed = body.trim()
+  if (!trimmed.startsWith('{')) return undefined
+  try {
+    const parsed: unknown = JSON.parse(trimmed)
+    if (typeof parsed !== 'object' || parsed === null || Array.isArray(parsed)) return undefined
+    const code = (parsed as Record<string, unknown>)['code']
+    return typeof code === 'number' ? code : undefined
+  } catch {
+    return undefined
+  }
+}
+
+/**
+ * Whether a rejected chat is the gateway's *own* instruction to resend it.
+ *
+ * The CN gateway answers some channel/abuse rejections with `400` / `code 11128`
+ * ("Illegal API invocation from an unapproved channel"), a generic
+ * 「请求被拦截，请重新发送」 display message, and `actions: ["RETRY", …]`. That is a
+ * transient refusal, not a defect in the request: the same body that is refused
+ * once is accepted on a fresh attempt, and the fix is what the message says —
+ * send it again. Everything else in the 4xx family keeps its single attempt, so
+ * a malformed request is never doubled and credits are never spent twice.
+ */
+export function blockedChatWantsRetry(status: number, body: string): boolean {
+  if (status !== 400) return false
+  if (upstreamErrorCode(body) === 11128) return true
+  const trimmed = body.trim()
+  if (!trimmed.startsWith('{')) return false
+  try {
+    const parsed: unknown = JSON.parse(trimmed)
+    if (typeof parsed !== 'object' || parsed === null || Array.isArray(parsed)) return false
+    const actions = (parsed as Record<string, unknown>)['actions']
+    return Array.isArray(actions) && actions.includes('RETRY')
+  } catch {
+    return false
+  }
 }
 
 /** Region for a login domain; an empty domain means CN (matching upstream tooling). */
@@ -837,24 +880,32 @@ export class WorkBuddyUpstreamClient {
       userAgent = chatUserAgent(identity, region)
     }
     let response: Response
-    try {
-      response = await fetch(`${chatBase(credential)}/v2/chat/completions`, {
-        method: 'POST',
-        headers: { ...chatHeaders(credential, userAgent, identity.clientVersion), 'Authorization': `Bearer ${credential.accessToken}` },
-        body: region === 'global' ? prepareInternationalChatBody(bodyJson) : prepareCnChatBody(bodyJson),
-        ...signal === undefined ? {} : { signal },
-      })
-    } catch (error: unknown) {
-      return { ok: false, status: 0, kind: 'server', message: `transport error: ${String(error)}` }
+    // One resend is allowed, and only when the gateway itself asks for it (see
+    // `blockedChatWantsRetry`). Each attempt rebuilds the headers, so the
+    // conversation trio is fresh: reusing it would resend into the channel the
+    // gateway just refused.
+    for (let attempt = 1; ; attempt += 1) {
+      try {
+        response = await fetch(`${chatBase(credential)}/v2/chat/completions`, {
+          method: 'POST',
+          headers: { ...chatHeaders(credential, userAgent, identity.clientVersion), 'Authorization': `Bearer ${credential.accessToken}` },
+          body: region === 'global' ? prepareInternationalChatBody(bodyJson) : prepareCnChatBody(bodyJson),
+          ...signal === undefined ? {} : { signal },
+        })
+      } catch (error: unknown) {
+        return { ok: false, status: 0, kind: 'server', message: `transport error: ${String(error)}` }
+      }
+      if (response.ok) return { ok: true, response }
+      const text = (await response.text()).slice(0, ERROR_BODY_LIMIT)
+      if (attempt < CHAT_ATTEMPTS && blockedChatWantsRetry(response.status, text) && signal?.aborted !== true) continue
+      return {
+        ok: false,
+        status: response.status,
+        kind: classifyUpstreamError(response.status, text),
+        message: text,
+      }
     }
-    if (response.ok) return { ok: true, response }
-    const text = (await response.text()).slice(0, ERROR_BODY_LIMIT)
-    return {
-      ok: false,
-      status: response.status,
-      kind: classifyUpstreamError(response.status, text),
-      message: text,
-    }
+
   }
 
   /** POST the token-refresh endpoint; the caller merges the outcome. */
@@ -1518,14 +1569,20 @@ export function modelWithCurrentPromotion(model: WorkBuddyUpstreamModel, now = D
  * run over an already-prepared-or-not body.
  */
 export function prepareCnChatBody(source: string): string {
+  // The shared normalization first: it forces `stream` and rewrites the
+  // `developer` role the CN gateway rejects with code 11128 — the same guard the
+  // international path gets. `chatStream` already prepares this body once for
+  // both regions, so this is defence in depth for any other caller, and it is
+  // idempotent.
+  const prepared = prepareChatBody(source)
   let body: unknown
   try {
-    body = JSON.parse(source)
+    body = JSON.parse(prepared)
   } catch {
     // Not JSON: nothing to strip, and the upstream will reject it anyway.
-    return source
+    return prepared
   }
-  if (!isObject(body)) return source
+  if (!isObject(body)) return prepared
   dropUnsupportedEffort(body)
   return JSON.stringify(body)
 }

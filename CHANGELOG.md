@@ -3,6 +3,36 @@
 本 Fork（`android-support` 分支）是**面向手机端的发行版**，基于上游 [corrinehu/dsh-workbuddy-connect](https://github.com/corrinehu/dsh-workbuddy-connect)。
 只记录**本 Fork 相对上游的差异**；上游自身的更新请看上游仓库的发布记录。
 
+## 0.7.6-android.2
+
+对应上游基线：`v0.7.6`（DSH 内核 `0.2.0-rc.2`）。
+
+### 修复
+
+- **对话被上游拦截时不再直接报错**：CN 网关对部分请求会返回 `400` / `code 11128`
+  （`Illegal API invocation from an unapproved channel`，用户看到的是「请求被拦截，请重新发送」），
+  并在响应里用 `actions: ["RETRY", …]` **明确要求客户端重发**。此前插件把它当作普通客户端错误直接抛出，
+  于是表现为「发一条就报错」。现在：
+  - 仅当状态为 `400` **且**（`code === 11128` 或 `actions` 含 `RETRY`）时**重发一次**；其余 4xx/5xx 一律不重试，
+    避免畸形请求被重发、积分被重复扣；
+  - 每次重发都重新生成 `X-Conversation-*` 三件套（复用旧值等于往刚被拒的通道里再送一次）；
+  - 调用方已中止（`AbortSignal`）时不重发。
+- **CN 请求体归一化补全**：`prepareCnChatBody()` 现在也先经过共享的 `prepareChatBody()`，
+  因此同样强制 `stream: true` 并把 `role: "developer"` 改写为 `system`——后者正是上游返回 `11128`
+  的一个已知触发点。此前只有国际版路径做这件事。
+
+### 诊断结论（供后续排查参考）
+
+对 `copilot.tencent.com` 的实测排除了这些猜测：客户端 UA / `X-User-Id` / `X-Domain` / `X-IDE-*`
+身份头、请求体积（293 KB、200 轮历史、60 个工具定义）、并发（6 路并发全部 200），
+以及 `cache_control`、分片 content、`tool_calls` 等结构差异。唯一能稳定复现同一条「请求被拦截」文案的
+是 `role: "developer"`；其余形态要么 200，要么返回别的错误码（11101 / 11135 / 11148）。
+
+### 测试
+
+- 新增 `tests/blocked-chat-retry.spec.ts`（12 条）：判定边界、重发一次即成功、重发使用全新会话三件套、
+  只重发一次、非可重试错误不重发、已中止不重发、CN 归一化改写 `developer` 且幂等、CN 与国际版一致。
+
 ## 0.7.6-android.1
 
 对应上游基线：`v0.7.6`（DSH 内核 `0.2.0-rc.2`）。
